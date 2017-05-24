@@ -20,9 +20,7 @@
 import logging
 #import mlat.server.main
 from mlat.server.main import MlatServer
-import sys
 
-print(sys.path)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO,
