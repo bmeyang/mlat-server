@@ -21,6 +21,7 @@ import logging
 #import mlat.server.main
 from mlat.server.main import MlatServer
 import sys
+import io
 
 print(sys.path)
 
