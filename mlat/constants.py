@@ -35,8 +35,8 @@ FTOM = 0.3038
 # metres to feet
 MTOF = 1.0/FTOM
 
-# m/s to knots
+# m/s to knots(海里/小时) 1海里=1852米
 MS_TO_KTS = 1.9438
 
-# m/s to fpm
+# m/s to fpm(英尺/分钟)
 MS_TO_FPM = MTOF * 60

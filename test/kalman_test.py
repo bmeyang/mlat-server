@@ -11,7 +11,7 @@ from contextlib import closing
 
 import mlat.geodesy
 import mlat.constants
-import mlat.kalman
+import mlat.server.kalman
 
 
 class DummyReceiver(object):
