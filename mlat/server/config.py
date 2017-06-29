@@ -52,4 +52,8 @@ SOLVER_MAXFEV = 50
 if 'AGPL_SERVER_CODE_URL' not in globals():
     raise RuntimeError('Please update AGPL_SERVER_CODE_URL in mlat/server/config.py')
 
-FUSION_ALG = 1   #1:使用融合算法（最小二乘法+伪逆法=融合算法)； 0:最小二乘法
+# 0:最小二乘法
+# 1:伪逆法（接收站不分组）
+# 2:伪逆法（接收站分组)；
+# 3:融合算法（最小二乘法 + 分组伪逆法 = 融合算法)；
+EQUATIONS_ALG = 0

@@ -77,7 +77,7 @@ def solve(measurements, altitude, altitude_error, initial_guess):
     ecef: the multilaterated ECEF position of the transmitter
     ecef_cov: an estimate of the covariance matrix of ecef
     """
-    if config.FUSION_ALG == 0: #没有使用融合算法，采用最小二乘法
+    if config.EQUATIONS_ALG == 0: #采用最小二乘法
         if len(measurements) + (0 if altitude is None else 1) < 4:
             raise ValueError('Not enough measurements available')
 
@@ -123,6 +123,6 @@ def solve(measurements, altitude, altitude_error, initial_guess):
             #glogger.info("solver: failed: {0} {1}".format(ler, mesg))
             return None
 
-    elif config.FUSION_ALG == 1: #采用融合算法
+    elif config.EQUATIONS_ALG == 1: #采用融合算法
         pinvalg.tdoa_pinv_solve(measurements, altitude, altitude_error)
         return None
