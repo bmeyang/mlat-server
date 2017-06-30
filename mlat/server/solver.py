@@ -122,7 +122,21 @@ def solve(measurements, altitude, altitude_error, initial_guess):
             # Solver failed
             #glogger.info("solver: failed: {0} {1}".format(ler, mesg))
             return None
-
-    elif config.EQUATIONS_ALG == 1: #采用融合算法
-        pinvalg.tdoa_pinv_solve(measurements, altitude, altitude_error)
-        return None
+    elif config.EQUATIONS_ALG == 1: #采用伪逆法，不分组
+        base_timestamp = measurements[0][1]
+        sdata = [[receiver.position, #实际传入的参数可能是类对象，需要receiver.positon
+                 timestamp - base_timestamp,
+                 variance]
+                 for receiver, timestamp, variance in measurements]
+        sdata.sort(key=lambda x: x[1])
+        pos = pinvalg.tdoa_pinv(sdata)
+        if (pos[0]==[0,0,0] ^ pos[1]==[0,0,0]):
+            position_est = [pos[0][i] + pos[1][i] for i in range(3)]
+            return position_est, None
+        else:
+            return None
+    elif config.EQUATIONS_ALG == 2: #采用伪逆法 分组求解 + 选取相关解 + 数据融合
+        group_pos = pinvalg.tdoa_pinv_solve(measurements, altitude, altitude_error)
+        related_pos = pinvalg.related_solutions(group_pos) #选取相关解
+        position_est = pinvalg.fusion_solution(related_pos) #数据融合
+        return position_est, None

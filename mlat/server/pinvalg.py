@@ -1,8 +1,10 @@
 import numpy as np
 import math
 import itertools
+import time
 
 from mlat import geodesy, constants
+from mlat.server import config
 
 '''
 伪逆法求解时差定位的非线性方程组
@@ -16,6 +18,7 @@ def tdoa_pinv_solve(measurements, altitude=10000, altitude_error=None):
     :param altitude:
     :param altitude_error:
     :return: 多组解组成的list。需要进一步处理：选取相关解、数据融合
+             格式：[[[x11, y11, z11], [x12, y12, z12]], [[x21, y21, z21], [x22, y22, z22]]]
     '''
     if len(measurements) < 4:
         raise ValueError('Not enough measurements available for pseudo inverse algorithm')
@@ -32,43 +35,90 @@ def tdoa_pinv_solve(measurements, altitude=10000, altitude_error=None):
         dd = list(group_data[i])
         dd.sort(key=lambda x: x[1])
         rr = tdoa_pinv(dd)
-        # print("rr=",rr)
         i += 1
-        if not rr:
-            continue
-        elif len(rr) == 2:
-            result.append(rr[0])
-            result.append(rr[1])
-        else:
-            result.append(rr[0])
-    # print(result)
+        result.append(rr)
+    # print("tdoa_pinv_solve求解=", result)
     return result
 
 
-def related_solutions(solution):
+def related_solutions(position, radius=config.MAX_RADIUS):
     '''
-
-    :param solution: tdoa_pinv_solve求得的解的list
+    选取相关解
+    适应于基站个数>=5，采用了基站分组求解算法的情况
+    :param position: tdoa_pinv_solve的返回值，所有分组解的list
+    :radius:解模糊时采用的半径
     :return: 相关解
     '''
-    return solution
+
+    num = len(position)
+    if num <= 1:  # 若只有一组解，无法选取相关解
+        return [position[0][0], position[0][1]]
+
+    result = []
+    center = []
+
+    i = 0
+    while i < num:  # 找可用的中心点
+        if (position[i][0] == [0, 0, 0]) ^ (position[i][1] == [0, 0, 0]):
+            break
+        i += 1
+
+    if i >= num:  # 全是无解或者全都是模糊解
+        if position[0][0] == [0, 0, 0]:  # 全是无解
+            return [[0, 0, 0]]
+        else:  # 全是模糊解
+            pos = [position[0][0], position[0][1], position[1][0], position[1][1]]
+            distance = [geodesy.ecef_distance(pos[0], pos[2]), geodesy.ecef_distance(pos[1], pos[2]),
+                        geodesy.ecef_distance(pos[0], pos[3]), geodesy.ecef_distance(pos[1], pos[3])]
+            min_dis = min(distance)
+            idx = distance.index(min_dis)
+            if idx == 0:
+                center = pos[0]
+            elif idx == 1:
+                center = pos[1]
+            elif idx == 2:
+                center = pos[0]
+            elif idx == 3:
+                center = pos[1]
+    else:  # 存在一组解，其索引为i，其中一个解是无解[0,0,0]，另一个是真值
+        center = [position[i][0][j] + position[i][1][j] for j in range(3)]  # 中心点坐标
+
+    k = 0
+    while k < num:
+        if position[k][0] != [0, 0, 0]:
+            if geodesy.ecef_distance(position[k][0], center) <= radius:
+                result.append(position[k][0])
+        if position[k][1] != [0, 0, 0]:
+            if geodesy.ecef_distance(position[k][1], center) <= radius:
+                result.append(position[k][0])
+        k += 1
+
+    return result
 
 
-def fusion_solution(related_solu):
+def fusion_solution(related_position):
     '''
 
-    :param related_solu: 相关解
+    :param related_position: 相关解 格式：[[x1,y1,z1], [x2,y2,z2]]
     :return: 相关解经过数据融合之后得到的唯一一组解
     '''
 
-    return
+    num = len(related_position)  # 相关解的个数
+    if num <= 1:
+        return [related_position[0][0], related_position[0][1], related_position[0][2]]
+    else: #暂时采用简化方法（平均值），以后还要进一步完善，例如根据支持度矩阵求加权系数，再加权平均
+        xx = [pos[0] for pos in related_position]
+        yy = [pos[1] for pos in related_position]
+        zz = [pos[2] for pos in related_position]
+        result = [np.mean(xx), np.mean(yy), np.mean(zz)]
+        return result
 
 
 def tdoa_pinv_4_station(station_data):
     '''
     只适应于4个接收站的情况 基本属于obsoletely函数
     :param station_data: 包含接收站ecef坐标、时差等信息的list
-    :return: ecef position
+    :return: 一对ecef坐标
 
 
     '''
@@ -144,7 +194,7 @@ def tdoa_pinv_4_station(station_data):
                 r0m_2 = None
     # print(r0m_1,r0m_2)
 
-    result = []
+
     xm_1, ym_1, zm_1 = 0, 0, 0
     xm_2, ym_2, zm_2 = 0, 0, 0
     if r0m_1 is not None:
@@ -152,28 +202,27 @@ def tdoa_pinv_4_station(station_data):
         ym_1 = m2 * r0m_1 + n2
         zm_1 = m3 * r0m_1 + n3
         # print(xm_1,ym_1,zm_1)
-        # llh1 = geodesy.ecef2llh([xm_1, ym_1, zm_1])
-        # if llh1[2] >= 0: #高度>=0
-        #     result.append([xm_1, ym_1, zm_1])
+        llh1 = geodesy.ecef2llh([xm_1, ym_1, zm_1])
+        if llh1[2] < 0:  # 若高度<0，则将结果赋为0
+            xm_1, ym_1, zm_1 = 0, 0, 0
 
     if r0m_2 is not None:
         xm_2 = m1 * r0m_2 + n1
         ym_2 = m2 * r0m_2 + n2
         zm_2 = m3 * r0m_2 + n3
         # print(xm_2,ym_2,zm_2)
-        # llh2 = geodesy.ecef2llh([xm_2, ym_2, zm_2])
-        # if llh2[2] >= 0:
-        #     result.append([xm_2, ym_2, zm_2])
-    result.append([xm_1, ym_1, zm_1])
-    result.append([xm_2, ym_2, zm_2])
+        llh2 = geodesy.ecef2llh([xm_2, ym_2, zm_2])
+        if llh2[2] < 0:
+            xm_2, ym_2, zm_2 = 0, 0, 0
+    result = [[xm_1, ym_1, zm_1], [xm_2, ym_2, zm_2]]
     return result
 
 
 def tdoa_pinv(station_data):
     '''
     适应于接收站大于等于4个的情况
-    :param station_data: 包含接收站ecef坐标、时差等信息的list
-    :return: ecef position
+    :param station_data: 包含接收站ecef坐标、时差,时间戳方差等信息的list
+    :return: 一对ecef坐标,格式:[[x1,y1,z1], [x2, y2, z2]]
     '''
     if len(station_data) < 4:
         raise ValueError('Not enough station_data available for pseudo inverse algorithm')
@@ -225,24 +274,22 @@ def tdoa_pinv(station_data):
     # a21, a22, a23 = A_left_pinv[1]
     # a31, a32, a33 = A_left_pinv[2]
     deltaR.pop(0)
-    m = np.dot(A_left_pinv, deltaR)  # 将数组转换成矩阵
+    m = np.dot(A_left_pinv, deltaR)
     # m1 = a11 * deltaR1 + a12 * deltaR2 + a13 * deltaR3
     # m2 = a21 * deltaR1 + a22 * deltaR2 + a23 * deltaR3
     # m3 = a31 * deltaR1 + a32 * deltaR2 + a33 * deltaR3
-    # print(m1,m2,m3)
 
     k.pop(0)
     n = np.dot(A_left_pinv, k)
     # n1 = a11 * k[1] + a12 * k[2] + a13 * k[3]
     # n2 = a21 * k[1] + a22 * k[2] + a23 * k[3]
     # n3 = a31 * k[1] + a32 * k[2] + a33 * k[3]
-    # print(n1,n2,n3)
+
     a = m[0] ** 2 + m[1] ** 2 + m[2] ** 2 - 1
     b = m[0] * n[0] - m[0] * position[0][0] + m[1] * n[1] - m[1] * position[0][1] + m[2] * n[2] - m[2] * position[0][2]
     c = (n[0] - position[0][0]) ** 2 + (n[1] - position[0][1]) ** 2 + (n[2] - position[0][2]) ** 2
-    # print(a,b,c)
     ggg = b ** 2 - a * c
-    # print(ggg)
+
     if a <= 0:  # 有唯一解
         r0m_1 = -b / a - math.sqrt(ggg) / a
         r0m_2 = None
@@ -261,49 +308,61 @@ def tdoa_pinv(station_data):
                 r0m_1 = None
                 r0m_2 = None
 
-    # print(r0m_1,r0m_2)
-
-    result = []
     xm_1, ym_1, zm_1 = 0, 0, 0
     xm_2, ym_2, zm_2 = 0, 0, 0
     if r0m_1 is not None:
         xm_1 = m[0] * r0m_1 + n[0]
         ym_1 = m[1] * r0m_1 + n[1]
         zm_1 = m[2] * r0m_1 + n[2]
-        # print(xm_1,ym_1,zm_1)
-        # llh1 = geodesy.ecef2llh([xm_1, ym_1, zm_1])
-        # if llh1[2] >= 0: #高度>=0
-        #     result.append([xm_1, ym_1, zm_1])
+        # print(xm_1, ym_1, zm_1)
+        llh1 = geodesy.ecef2llh([xm_1, ym_1, zm_1])
+        if llh1[2] < 0:  # 若高度<0，则将结果赋为0
+            xm_1, ym_1, zm_1 = 0, 0, 0
 
     if r0m_2 is not None:
         xm_2 = m[0] * r0m_2 + n[0]
         ym_2 = m[1] * r0m_2 + n[1]
         zm_2 = m[2] * r0m_2 + n[2]
-        # print(xm_2,ym_2,zm_2)
-        # llh2 = geodesy.ecef2llh([xm_2, ym_2, zm_2])
-        # if llh2[2] >= 0:
-        #     result.append([xm_2, ym_2, zm_2])
-    result.append([xm_1, ym_1, zm_1])
-    result.append([xm_2, ym_2, zm_2])
+        # print(xm_2, ym_2, zm_2)
+        llh2 = geodesy.ecef2llh([xm_2, ym_2, zm_2])
+        if llh2[2] < 0:
+            xm_2, ym_2, zm_2 = 0, 0, 0
+    result = [[xm_1, ym_1, zm_1], [xm_2, ym_2, zm_2]]
     return result
 
 
 if __name__ == "__main__":
     sdata = [[(-2640995.0, 4321663.0, 3863794.0), 0, 0.25], [(-2651352, 4322976, 3855260), 19.9, 0.37],
              [(-2642368, 4327651, 3856180), 22.8, 0.34], [(-2656287, 4317997, 3857399), 23.4, 0.3]]
-    mubiao = tdoa_pinv_4_station(sdata)
-    print("ecef = ", mubiao)
-    print(" llh = ", geodesy.ecef2llh(mubiao[0]), geodesy.ecef2llh(mubiao[1]))
+    # mubiao = tdoa_pinv_4_station(sdata)
+    # print("ecef = ", mubiao)
+    # print(" llh = ", geodesy.ecef2llh(mubiao[0]), geodesy.ecef2llh(mubiao[1]))
 
     measurements = [[(-2640995.0, 4321663.0, 3863794.0), 0, 0.25], [(-2651352, 4322976, 3855260), 19.9, 0.37],
                     [(-2642368, 4327651, 3856180), 22.8, 0.34], [(-2656287, 4317997, 3857399), 23.4, 0.3],
-                    [(-2656387, 4318997, 3857499), 26.4, 0.43], [(-2649368, 4327951, 3856980), 29.8, 0.22]]
+                    [(-2656387, 4318997, 3857499), 26.4, 0.43], [(-2649368, 4327951, 3856980), 29.8, 0.22],
+                    [(-2756387, 4318997, 3857499), 36.4, 0.43], [(-2659368, 4327951, 3856980), 39.8, 0.22],
+                    [(-2756387, 4322997, 3857499), 46.4, 0.43], [(-2659368, 4327951, 3877980), 49.8, 0.22]]
+    # [(-2723387, 4322997, 3888499), 56.4, 0.43], [(-2651268, 4344451, 3812980), 59.8, 0.22],
+    # [(-2923387, 4322997, 3812499), 66.4, 0.43], [(-2659968, 4344921, 3812980), 69.8, 0.22],
+    # [(-2912217, 4321007, 3623419), 71.4, 0.43], [(-2656368, 3452921, 3722262), 72.8, 0.22],
+    # [(-2999217, 4123007, 3623419), 81.4, 0.43], [(-2678968, 3452921, 3801232), 82.8, 0.22],
+    # [(-2789017, 4321098, 3789639), 91.4, 0.43], [(-2668978, 3368921, 3900122), 92.8, 0.22]]
 
+    start1 = time.clock()
     result = tdoa_pinv_solve(measurements)
-    print(result)
-    # print(len(result))
-    print(geodesy.ecef2llh(result[0]), geodesy.ecef2llh(result[1]))
+    print("tdoa_pinv_solve计算耗时：", time.clock() - start1)
+    print("result num =", len(result), "\nresult =", result)
+    print(geodesy.ecef2llh(result[0][0]), geodesy.ecef2llh(result[0][1]))
 
-    rrr = tdoa_pinv(measurements)
-    print(rrr)
-    print(geodesy.ecef2llh(rrr[0]), geodesy.ecef2llh(rrr[1]))
+    start2 = time.clock()
+    rel_pos = related_solutions(result)
+    print("related_solutions计算耗时：", time.clock() - start2)
+    print("相关解个数 =", len(rel_pos), "\n相关解 =", rel_pos)
+    print(geodesy.ecef2llh(rel_pos[0]), geodesy.ecef2llh(rel_pos[1]))
+    dis = geodesy.ecef_distance(rel_pos[0], rel_pos[1])
+    print(dis)
+
+    # rrr = tdoa_pinv(sdata)
+    # print(rrr)
+    # print(geodesy.ecef2llh(rrr[0]), geodesy.ecef2llh(rrr[1]))
