@@ -23,8 +23,9 @@ def tdoa_pinv_solve(measurements, altitude=10000, altitude_error=None):
     if len(measurements) < 4:
         raise ValueError('Not enough measurements available for pseudo inverse algorithm')
     base_timestamp = measurements[0][1]
-    pseudorange_data = [[receiver,  # receiver.position, #实际传入的参数可能是类对象，需要receiver.positon
-                         timestamp - base_timestamp,
+    # pseudorange_data = [[receiver, #实际传入的参数可能是类对象，需要receiver.positon
+    pseudorange_data = [[receiver.position, #实际传入的参数可能是类对象，需要receiver.positon
+                         (timestamp - base_timestamp)*1e6, # s -> us
                          math.sqrt(variance) * constants.Cair]
                         for receiver, timestamp, variance in measurements]
     group_data = list(itertools.combinations(pseudorange_data, 4))  # 求组合
@@ -106,11 +107,64 @@ def fusion_solution(related_position):
     num = len(related_position)  # 相关解的个数
     if num <= 1:
         return [related_position[0][0], related_position[0][1], related_position[0][2]]
-    else: #暂时采用简化方法（平均值），以后还要进一步完善，例如根据支持度矩阵求加权系数，再加权平均
+    else:
         xx = [pos[0] for pos in related_position]
         yy = [pos[1] for pos in related_position]
         zz = [pos[2] for pos in related_position]
-        result = [np.mean(xx), np.mean(yy), np.mean(zz)]
+        # result = [np.mean(xx), np.mean(yy), np.mean(zz)] #暂时采用简化方法（平均值），需要进一步完善，例如建立支持度矩阵求加权系数，再加权平均
+
+        #建立x的支持度矩阵，计算x的融合结果
+        x_dij = []
+        for i in xx:
+            for j in xx:
+                x_dij.append(abs(i - j))
+        max_xx = max(x_dij)
+        x_sij = []
+        for dd in x_dij:
+            x_sij.append(1 - dd/max_xx)
+        x_sij = np.reshape(x_sij, (num, num)) #支持度矩阵
+        x_eval, x_evec = np.linalg.eig(x_sij) #计算特征值、特征向量
+        x_max_eval_idx = np.argsort(x_eval)[-1] #最大模特征值对应的索引
+        x_V = x_evec[:, x_max_eval_idx:x_max_eval_idx + 1] #最大模特征值对应的特征向量
+        sum_xV = sum(x_V)
+        x_W = [x_V_v/sum_xV for x_V_v in x_V]
+        x_pos = np.dot(xx, x_W.transpose()) #融合后的x坐标点
+
+        #建立y的支持度矩阵，计算y的融合结果
+        y_dij = []
+        for i in yy:
+            for j in yy:
+                y_dij.append(abs(i - j))
+        max_yy = max(y_dij)
+        y_sij = []
+        for dd in y_dij:
+            y_sij.append(1 - dd/max_yy)
+        y_sij = np.reshape(y_sij, (num, num)) #支持度矩阵
+        y_eval, y_evec = np.linalg.eig(y_sij) #计算特征值、特征向量
+        y_max_eval_idx = np.argsort(y_eval)[-1] #最大模特征值对应的索引
+        y_V = y_evec[:, y_max_eval_idx:y_max_eval_idx + 1] #最大模特征值对应的特征向量
+        sum_yV = sum(y_V)
+        y_W = [y_V_v/sum_yV for y_V_v in y_V]
+        y_pos = np.dot(yy, y_W.transpose()) #融合后的y坐标点
+
+        #建立z的支持度矩阵，计算z的融合结果
+        z_dij = []
+        for i in zz:
+            for j in zz:
+                z_dij.append(abs(i - j))
+        max_zz = max(z_dij)
+        z_sij = []
+        for dd in z_dij:
+            z_sij.append(1 - dd/max_zz)
+        z_sij = np.reshape(z_sij, (num, num)) #支持度矩阵
+        z_eval, z_evec = np.linalg.eig(z_sij) #计算特征值、特征向量
+        z_max_eval_idx = np.argsort(z_eval)[-1] #最大模特征值对应的索引
+        z_V = z_evec[:, z_max_eval_idx:z_max_eval_idx + 1] #最大模特征值对应的特征向量
+        sum_zV = sum(z_V)
+        z_W = [z_V_v/sum_zV for z_V_v in z_V]
+        z_pos = np.dot(zz, z_W.transpose()) #融合后的z坐标点
+        result = [x_pos, y_pos, z_pos]
+
         return result
 
 
@@ -359,9 +413,11 @@ if __name__ == "__main__":
     rel_pos = related_solutions(result)
     print("related_solutions计算耗时：", time.clock() - start2)
     print("相关解个数 =", len(rel_pos), "\n相关解 =", rel_pos)
-    print(geodesy.ecef2llh(rel_pos[0]), geodesy.ecef2llh(rel_pos[1]))
-    dis = geodesy.ecef_distance(rel_pos[0], rel_pos[1])
-    print(dis)
+    # print(geodesy.ecef2llh(rel_pos[0]), geodesy.ecef2llh(rel_pos[1]))
+    # dis = geodesy.ecef_distance(rel_pos[0], rel_pos[1])
+    # print(dis)
+    fus_pos = fusion_solution(rel_pos)
+    print("融合解 =", fus_pos)
 
     # rrr = tdoa_pinv(sdata)
     # print(rrr)
