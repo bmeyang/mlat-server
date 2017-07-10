@@ -125,18 +125,23 @@ def solve(measurements, altitude, altitude_error, initial_guess):
     elif config.EQUATIONS_ALG == 1: #采用伪逆法，不分组
         base_timestamp = measurements[0][1]
         sdata = [[receiver.position, #实际传入的参数可能是类对象，需要receiver.positon
-                 timestamp - base_timestamp,
+                  (timestamp - base_timestamp)*1e6, # s -> us
                  variance]
                  for receiver, timestamp, variance in measurements]
         sdata.sort(key=lambda x: x[1])
         pos = pinvalg.tdoa_pinv(sdata)
-        if (pos[0]==[0,0,0] ^ pos[1]==[0,0,0]):
+        if (pos[0]==[0,0,0]) ^ (pos[1]==[0,0,0]):
             position_est = [pos[0][i] + pos[1][i] for i in range(3)]
             return position_est, None
-        else:
+        else: #解模糊或者无解
             return None
     elif config.EQUATIONS_ALG == 2: #采用伪逆法 分组求解 + 选取相关解 + 数据融合
-        group_pos = pinvalg.tdoa_pinv_solve(measurements, altitude, altitude_error)
+        group_pos = pinvalg.tdoa_pinv_solve(measurements, altitude, altitude_error) #分组求解
+        if group_pos == None:
+            return  None
         related_pos = pinvalg.related_solutions(group_pos) #选取相关解
         position_est = pinvalg.fusion_solution(related_pos) #数据融合
-        return position_est, None
+        if position_est == [0,0,0]:
+            return None
+        else:
+            return position_est, None
