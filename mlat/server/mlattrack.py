@@ -86,10 +86,11 @@ class MlatTracker(object):
     def receiver_mlat(self, receiver, timestamp, message, utc):
         # use message as key
         group = self.pending.get(message)
+        msglen = len(message)
         if not group:
             group = self.pending[message] = MessageGroup(message, utc)
             group.handle = asyncio.get_event_loop().call_later(
-                config.MLAT_DELAY,
+                0.3 if msglen==2 else config.MLAT_DELAY, #A模式延時0.5s, S模式延時2.5s
                 self._resolve,
                 group)
 
@@ -99,10 +100,19 @@ class MlatTracker(object):
     @profile.trackcpu
     def _resolve(self, group):
         del self.pending[group.message]
+        st = set()
+        for a in group.copies:
+            st.add(a[0].user)
+        # glogger.info("group.message = {0}, message len = {1}, copies len = {2}, st = {3}".
+        #              format(group.message, len(group.message), len(group.copies), st))
 
         # less than 3 messages -> no go
         if len(group.copies) < 3:
             return
+
+        # if len(st) >= 4:
+        #     glogger.info("group.message = {0}, message len = {1}, copies len = {2}, st = {3}".
+        #              format(group.message, len(group.message), len(group.copies), st))
 
         decoded = modes.message.decode(group.message)
 
@@ -157,8 +167,12 @@ class MlatTracker(object):
 
         # check for minimum needed receivers
         dof = len(timestamp_map) + altitude_dof - 4
+
         if dof < 0:
             return
+
+        # glogger.info("group.message = {0}, copies len = {1}, st = {2}, dof = {3}".
+        #              format(group.message, len(group.copies), st, dof))
 
         # basic ratelimit before we do more work
         elapsed = group.first_seen - last_result_time
@@ -168,21 +182,30 @@ class MlatTracker(object):
         if elapsed < 2.0 and dof == last_result_dof:
             return
 
+        # glogger.info("group.message = {0}, copies len = {1}, st = {2}, dof = {3}".
+        #              format(group.message, len(group.copies), st, dof))
+
         # normalize timestamps. This returns a list of timestamp maps;
         # within each map, the timestamp values are comparable to each other.
         components = clocknorm.normalize(clocktracker=self.clock_tracker,
                                          timestamp_map=timestamp_map)
+
+        glogger.info("group.message = {0:02x}{1:02x}, squawk = {2:04x}, addr = {3:06x}, copies len = {4:03d}, st = {5}, dof = {6}, components len = {7}".
+                     format(group.message[0], group.message[1], decoded.squawk, decoded.address, len(group.copies), st, dof, len(components)))
 
         # cluster timestamps into clusters that are probably copies of the
         # same transmission.
         clusters = []
         min_component_size = 4 - altitude_dof
         for component in components:
+            glogger.info("    componet len = {}".format(len(component)))
             if len(component) >= min_component_size:  # don't bother with orphan components at all
                 clusters.extend(_cluster_timestamps(component, min_component_size))
 
         if not clusters:
             return
+
+        glogger.info("... clusters len = {0}".format(len(clusters)))
 
         # start from the most recent, largest, cluster
         result = None
@@ -226,6 +249,8 @@ class MlatTracker(object):
                 else:
                     # this result is suspect
                     var_est = 100e6
+
+                # glogger.info("solve ecef = {0}, ecef_cov = {1}, var_est = {2:.2f}".format(ecef, ecef_cov, var_est))
 
                 if var_est > 100e6:
                     # more than 10km, too inaccurate
@@ -340,7 +365,7 @@ def _cluster_timestamps(component, min_receivers):
     group = [flat_component[0]]
     groups = [group]
     for t in flat_component[1:]:
-        if (t[1] - group[-1][1]) > 2e-3:
+        if (t[1] - group[-1][1]) > 2e-3: #S模式2ms， A模式呢？
             group = [t]
             groups.append(group)
         else:
@@ -351,13 +376,13 @@ def _cluster_timestamps(component, min_receivers):
     # is why we try to break up the component into
     # smaller groups first.
 
-    #glogger.info("{n} groups".format(n=len(groups)))
+    # glogger.info("{n} groups".format(n=len(groups)))
 
     clusters = []
     for group in groups:
-        #glogger.info(" group:")
-        #for r, t, e in group:
-        #    glogger.info("  {r} {t:.1f}us {e:.1f}us".format(r=r.user, t=t*1e6, e=e*1e6))
+        # glogger.info(" group:")
+        # for r, t, e, utc in group:
+        #    glogger.info("  {r} {t:.1f}ms {e:.1f}ns".format(r=r.user, t=t*1e3, e=e*1e9))
 
         while len(group) >= min_receivers:
             receiver, timestamp, variance, utc = group.pop()
@@ -376,7 +401,7 @@ def _cluster_timestamps(component, min_receivers):
                     # Can't possibly be part of the same cluster.
                     #
                     # Note that this is a different test to the rough grouping above:
-                    # that looks at the interval betwen _consecutive_ items, so a
+                    # that looks at the interval between _consecutive_ items, so a
                     # group might span a lot more than 2ms!
                     #glogger.info("   discard: >2ms out")
                     break
