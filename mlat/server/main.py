@@ -98,6 +98,7 @@ class MlatServer(object):
                             type=host_and_ports,
                             action='append',
                             default=[])
+
         parser.add_argument('--motd',
                             type=str,
                             help="set the server MOTD sent to clients.",
@@ -114,6 +115,7 @@ class MlatServer(object):
                             action='append',
                             type=hostport,
                             default=[])
+
         parser.add_argument('--basestation-listen',
                             help="listen on a [host:]port and send Basestation-format results to clients that connect.",
                             action='append',
@@ -226,7 +228,8 @@ class MlatServer(object):
         self.loop.stop()
 
     def run(self):
-        args = self.make_arg_parser().parse_args()
+        parser = self.make_arg_parser()
+        args = parser.parse_args()
 
         self.coordinator = coordinator.Coordinator(work_dir=args.work_dir,
                                                    pseudorange_filename=args.dump_pseudorange,

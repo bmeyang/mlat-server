@@ -41,6 +41,7 @@ def format_date(timestamp):
 
 
 def csv_quote(s):
+    s = str(s) #字符串
     if s is None:
         return ''
     if s.find('\n') == -1 and s.find('"') == -1 and s.find(',') == -1:
