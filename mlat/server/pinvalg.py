@@ -31,7 +31,7 @@ def tdoa_pinv_solve(measurements, altitude=10000, altitude_error=None):
     # pseudorange_data = [[receiver,  # 临时调试用
     pseudorange_data = [[receiver.position,  # 实际传入的参数是类对象，需要receiver.positon
                          (timestamp - base_timestamp) * 1e6,  # s -> us
-                         #(timestamp - base_timestamp),  # us 临时调试用
+                         # (timestamp - base_timestamp),  # us 临时调试用
                          math.sqrt(variance) * constants.Cair]
                         for receiver, timestamp, variance in measurements]
     group_data = list(itertools.combinations(pseudorange_data, 4))  # 求组合
@@ -111,7 +111,9 @@ def fusion_solution(related_position):
     '''
 
     num = len(related_position)  # 相关解的个数
-    if num <= 1:
+    if num <= 0:
+        return [0, 0, 0]
+    elif num == 1:
         return [related_position[0][0], related_position[0][1], related_position[0][2]]
     else:
         for jj in related_position:
@@ -191,7 +193,7 @@ def tdoa_pinv(station_data):
     :return: 一对ecef坐标,格式:[[x1,y1,z1], [x2, y2, z2]]
     '''
     if len(station_data) < 4:
-        raise ValueError('Not enough station_data available for pseudo inverse algorithm')
+        raise ValueError('Not enough station_data available for tdoa_pinv algorithm')
     dimension = len(station_data)
     baseT = station_data[0][1]
     position = [receiver for receiver, t, error in station_data]  # 接收站的ecef坐标
@@ -299,14 +301,14 @@ def tdoa_pinv(station_data):
 
 def tdoa_pinv_4_station(station_data):
     '''
-    只适应于4个接收站的情况 基本属于obsoletely函数
+    只适应于4个接收站的情况 (obsoletely)
     :param station_data: 包含接收站ecef坐标、时差等信息的list
     :return: 一对ecef坐标
 
 
     '''
     if len(station_data) != 4:
-        raise ValueError('Not enough station_data available for pseudo inverse algorithm')
+        raise ValueError('Not 4 station_data available for tdoa_pinv_4_station algorithm')
 
     x0, y0, z0 = station_data[0][0]  # 主站ecef坐标，单位：米
     x1, y1, z1 = station_data[1][0]  # 辅站1 ecef坐标
@@ -509,9 +511,17 @@ if __name__ == "__main__":
            [(-2642368.0, 4327651.0, 3856180.0), 22.8, 0.34], [(-2656287.0, 4317997.0, 3857399.0), 23.4, 0.3]]
     mea = [[(-2640995.0, 4321663.0, 3863794.0), 0.0, 0.25], [(-2642368.0, 4327651.0, 3856180.0), 3.6, 0.25],
            [(-2651352.0, 4322976.0, 3855260.0), 34.1, 0.25], [(-2656287.0, 4317997.0, 3857399.0), 51.4, 0.25]]
-    four_pos = tdoa_pinv_4_station(mea)
-    print("\n4_pos =", four_pos)
-    print("4_llh =", geodesy.ecef2llh(four_pos[0]))
+    mea = [[(-2641300.0, 4331771.0, 3852301.0), 0.0, 0.32], [(-2642368.0, 4327651.0, 3856180.0), 1.0, 0.3],
+           [(-2641365.0, 4322258.0, 3862924.0), 7.6, 0.4], [(-2640995.0, 4321663.0, 3863794.0), 8.6, 0.25],
+           [(-2637456.0, 4318200.0, 3869987.0), 19.1, 0.42], [(-2651352.0, 4322976.0, 3855260.0), 33.3, 0.28],
+           [(-2653290.0, 4323892.0, 3852885.0), 39.8, 0.31], [(-2656287.0, 4317997.0, 3857399.0), 54.2, 0.28]]
+    mea = [[(-2641300.0, 4331770.0, 3852300.0), 0.0, 0.37], [(-2642368.0, 4327651.0, 3856180.0), 6.9, 0.3],
+           [(-2641506.0, 4322138.0, 3862973.0), 14.6, 0.4], [(-2640995.0, 4321663.0, 3863794.0), 15.4, 0.25],
+           [(-2637457.0, 4318203.0, 3869988.0), 20.5, 0.32], [(-2651352.0, 4322976.0, 3855260.0), 40.3, 0.36],
+           [(-2653341.0, 4323948.0, 3852790.0), 45.8, 0.29], [(-2656287.0, 4317997.0, 3857399.0), 62.4, 0.4]]
+    # four_pos = tdoa_pinv_4_station(mea)
+    # print("\n4_pos =", four_pos)
+    # print("4_llh =", geodesy.ecef2llh(four_pos[0]))
     pos = tdoa_pinv(mea)
     print("  pos =", pos)
     print("  llh =", geodesy.ecef2llh(pos[0]))
@@ -522,64 +532,69 @@ if __name__ == "__main__":
     print("r_pos =", r_pos)
     f_pos = fusion_solution(r_pos)
     print("f_pos =", f_pos)
+    print("f_llh =", geodesy.ecef2llh(f_pos))
     '''
 
-
+    '''
     # 解析json文件，对比伪逆法和最小二乘法的计算结果
-
-    '''
-    llhmlatfile = open("../../79A035-llhmlat.txt", "w")
-    llhadsbfile = open("../../79A035-llhadsb.txt", "w")
-    llhpinvfile = open("../../79A035-llhpinv.txt", "w")
-    duibifile = open("../../79A035_duibi.txt", "w")
-    mlatfile = open("../../79A035-mlat.txt", "rt", encoding='utf-8')
-    adsbfile = open("../../79A035-adsb.txt", "rt", encoding='utf-8')
+    llhmlatfile = open("../../79A04D_pinv_kml.txt", "w")
+    # llhadsbfile = open("../../79A035-llhadsb.txt", "w")
+    # llhpinvfile = open("../../79A035-llhpinv.txt", "w")
+    # duibifile = open("../../79A035_duibi.txt", "w")
+    mlatfile = open("../../79A04D_10zhan.txt", "rt", encoding='utf-8')
+    # adsbfile = open("../../79A035-adsb.txt", "rt", encoding='utf-8')
     mlatlineList = mlatfile.readlines()
-    adsbLineList = adsbfile.readlines()
+    # adsbLineList = adsbfile.readlines()
     # print(len(mlatlineList))
     # print(len(adsbLineList))
     for mlatline in mlatlineList:
         meadata = []
         mlatdict = json.loads(mlatline)
-        jdata = {'icao': mlatdict['icao'],
-                 'time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mlatdict['time'])),
-                 'altitue': mlatdict['altitude'],
-                 'ecef': mlatdict['ecef']}
-        jdata['llh'] = geodesy.ecef2llh(mlatdict['ecef'])
+        # jdata = {'icao': mlatdict['icao'],
+        #          'time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mlatdict['time'])),
+        #          'altitue': mlatdict['altitude'],
+        #          'ecef': mlatdict['ecef']}
+        # jdata['llh'] = geodesy.ecef2llh(mlatdict['ecef'])
         for a in mlatdict['cluster']:
             *receiver, t, err = a
             meadata.append([receiver, t, err])
+        if len(meadata) < 4:
+            continue
+        # p_pos = tdoa_pinv(meadata)
         s_pos = tdoa_pinv_solve(meadata)
         r_pos = related_solutions(s_pos)
         f_pos = fusion_solution(r_pos)
-        jdata['ecef-pinv'] = f_pos
-        jdata['llh-pinv'] = geodesy.ecef2llh(f_pos)
-        for adsbline in adsbLineList: #
-            adsblist = adsbline.strip("\n").split(",")
-            # 如果adsb文件中有多个此时刻的数据，则只保留最后一个（时间精度只匹配到秒，会产生误差)
-            if jdata['time'] == adsblist[3].strip("\"") and jdata['icao'] == hex(int(adsblist[0]))[2:]:
-                jdata['llh-adsb'] = [adsblist[6], adsblist[5], adsblist[7]]
-                llhmlatfile.write(str(jdata['llh'][1]) + ',' + str(jdata['llh'][0]) + ',' + str(jdata['llh'][2]) + ' ')
-                llhadsbfile.write(str(adsblist[5]) + ',' + str(adsblist[6]) + ',' + str(adsblist[7]) + ' ')
-                if jdata['llh-pinv'][1] != 0.0:
-                    llhpinvfile.write(str(jdata['llh-pinv'][1]) + ',' + str(jdata['llh-pinv'][0]) + ',' + str(jdata['llh-pinv'][2]) + ' ')
+        llh = geodesy.ecef2llh(f_pos)
+        if llh[1] != 0.0:
+            llhmlatfile.write(str(llh[1]) + "," + str(llh[0]) + "," + str(llh[2]) + " ")
+        # jdata['ecef-pinv'] = f_pos
+        # jdata['llh-pinv'] = geodesy.ecef2llh(f_pos)
+        # for adsbline in adsbLineList: #
+        #     adsblist = adsbline.strip("\n").split(",")
+        #     # 如果adsb文件中有多个此时刻的数据，则只保留最后一个（时间精度只匹配到秒，会产生误差)
+        #     if jdata['time'] == adsblist[3].strip("\"") and jdata['icao'] == hex(int(adsblist[0]))[2:]:
+        #         jdata['llh-adsb'] = [adsblist[6], adsblist[5], adsblist[7]]
+        #         llhmlatfile.write(str(jdata['llh'][1]) + ',' + str(jdata['llh'][0]) + ',' + str(jdata['llh'][2]) + ' ')
+        #         llhadsbfile.write(str(adsblist[5]) + ',' + str(adsblist[6]) + ',' + str(adsblist[7]) + ' ')
+        #         if jdata['llh-pinv'][1] != 0.0:
+        #             llhpinvfile.write(str(jdata['llh-pinv'][1]) + ',' + str(jdata['llh-pinv'][0]) + ',' + str(jdata['llh-pinv'][2]) + ' ')
 
-        json.dump(jdata, duibifile, sort_keys=True)
-        duibifile.write("\n")
+        # json.dump(jdata, duibifile, sort_keys=True)
+        # duibifile.write("\n")
 
     llhmlatfile.close()
-    llhadsbfile.close()
-    llhpinvfile.close()
-    adsbfile.close()
+    # llhadsbfile.close()
+    # llhpinvfile.close()
+    # adsbfile.close()
     mlatfile.close()
-    duibifile.close()
+    # duibifile.close()
     '''
 
 
     # mlat_filename = sys.argv[1]
     # mlat_kml_filename = sys.argv[2]
-    mlat_filename = "../../780586_pinv.txt"
-    mlat_kml_filename = "../../780586_kml.txt"
+    mlat_filename = "../../780EFC_0712_mlat.txt"
+    mlat_kml_filename = "../../780EFC_0712_mlat_kml.txt"
 
     mlat_file = open(mlat_filename, "rt", encoding='utf-8')
     mlat_line_lists = mlat_file.readlines()
@@ -595,8 +610,8 @@ if __name__ == "__main__":
     mlat_kml_file.close()
 
 
-    adsb_file = open("../../780586_adsb.txt", "rt", encoding='utf-8')
-    adsb_kml_file = open("../../780586_adsb_kml.txt", "wt")
+    adsb_file = open("../../780EFC_0712_adsb.txt", "rt", encoding='utf-8')
+    adsb_kml_file = open("../../780EFC_0712_adsb_kml.txt", "wt")
     adsb_linelists = adsb_file.readlines()
     for adsb_line in adsb_linelists:
         dlist = adsb_line.strip("\n").split(",")
@@ -604,6 +619,3 @@ if __name__ == "__main__":
 
     adsb_file.close()
     adsb_kml_file.close()
-
-
-
