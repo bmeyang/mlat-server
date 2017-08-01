@@ -32,12 +32,12 @@ Various output methods for multilateration results.
 """
 
 
-def format_time(timestamp):
-    return time.strftime("%H:%M:%S", time.gmtime(timestamp)) + ".{0:03.0f}".format(math.modf(timestamp)[0] * 1000)
+def format_time(timestamp): #转换成北京时间
+    return time.strftime("%H:%M:%S", time.gmtime(timestamp+28800)) + ".{0:03.0f}".format(math.modf(timestamp)[0] * 1000)
 
 
-def format_date(timestamp):
-    return time.strftime("%Y/%m/%d", time.gmtime(timestamp))
+def format_date(timestamp): #转换成北京时间
+    return time.strftime("%Y/%m/%d", time.gmtime(timestamp+28800))
 
 
 def csv_quote(s):
