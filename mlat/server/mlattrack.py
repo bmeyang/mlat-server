@@ -27,6 +27,7 @@ import asyncio
 import logging
 import operator
 import numpy
+import time
 from contextlib import closing
 
 import modes.message
@@ -37,11 +38,12 @@ glogger = logging.getLogger("mlattrack")
 
 
 class MessageGroup:
-    def __init__(self, message, first_seen):
+    def __init__(self, message, first_seen, timestamp):
         self.message = message
         self.first_seen = first_seen
         self.copies = []
         self.handle = None
+        self.timestamp = timestamp
 
 
 class MlatTracker(object):
@@ -88,9 +90,9 @@ class MlatTracker(object):
         group = self.pending.get(message)
         msglen = len(message)
         if not group:
-            group = self.pending[message] = MessageGroup(message, utc)
+            group = self.pending[message] = MessageGroup(message, utc, time.time())
             group.handle = asyncio.get_event_loop().call_later(
-                0.3 if msglen==2 else config.MLAT_DELAY, #A模式延時0.5s, S模式延時2.5s
+                0.05 if msglen == 2 else config.MLAT_DELAY, #A模式延時0.2s, S模式延時2.5s
                 self._resolve,
                 group)
 
@@ -99,20 +101,23 @@ class MlatTracker(object):
 
     @profile.trackcpu
     def _resolve(self, group):
+        starttime = time.time()
         del self.pending[group.message]
-        st = set()
-        for a in group.copies:
-            st.add(a[0].user)
-        # glogger.info("group.message = {0}, message len = {1}, copies len = {2}, st = {3}".
-        #              format(group.message, len(group.message), len(group.copies), st))
+
+        # if len(group.message) <= 2: #过滤A模式报文
+        #     return
+
+        # st = set() #distinct接收站集合
+        # for a in group.copies:
+        #     st.add(a[0].user)
+        # glogger.info("delay time ={:.06f}, message len = {:02d}, copies len = {:04d}, st = {}, group.message = {}".
+        #              format(starttime - group.timestamp, len(group.message), len(group.copies), st, group.message))
+        # if len(st) >= 4: #A模式，接收站个数
+        #     glogger.info("group.message = {0}, message len = {1}, copies len = {2}, st = {3}".format(group.message, len(group.message), len(group.copies), st))
 
         # less than 3 messages -> no go
         if len(group.copies) < 3:
             return
-
-        # if len(st) >= 4:
-        #     glogger.info("group.message = {0}, message len = {1}, copies len = {2}, st = {3}".
-        #              format(group.message, len(group.message), len(group.copies), st))
 
         decoded = modes.message.decode(group.message)
 
@@ -171,16 +176,17 @@ class MlatTracker(object):
         if dof < 0:
             return
 
-        # glogger.info("group.message = {0}, copies len = {1}, st = {2}, dof = {3}".
-        #              format(group.message, len(group.copies), st, dof))
+        # glogger.info("可时钟归一聚簇数据 addr = {:06x}, delay time = {:.06f}, copies len = {:04d}, dof = {:01d}, message  len = {:03d}, st = {}".
+        #              format(decoded.address, starttime-group.timestamp, len(group.copies), dof, len(group.message), st))
 
         # basic ratelimit before we do more work
-        elapsed = group.first_seen - last_result_time
-        if elapsed < 15.0 and dof < last_result_dof:
-            return
-
-        if elapsed < 2.0 and dof == last_result_dof:
-            return
+        # 暂时 封掉 20170728
+        # elapsed = group.first_seen - last_result_time
+        # if elapsed < 15.0 and dof < last_result_dof:
+        #     return
+        #
+        # if elapsed < 2.0 and dof == last_result_dof:
+        #     return
 
         # glogger.info("group.message = {0}, copies len = {1}, st = {2}, dof = {3}".
         #              format(group.message, len(group.copies), st, dof))
@@ -190,28 +196,33 @@ class MlatTracker(object):
         components = clocknorm.normalize(clocktracker=self.clock_tracker,
                                          timestamp_map=timestamp_map)
 
-        glogger.info("group.message = {0:02x}{1:02x}, squawk = {2:04x}, addr = {3:06x}, copies len = {4:03d}, st = {5}, dof = {6}, components len = {7}".
-                     format(group.message[0], group.message[1], decoded.squawk, decoded.address, len(group.copies), st, dof, len(components)))
+        # glogger.info("addr = {:06x}, copies len = {:03d}, st = {}, dof = {}, components len = {}".
+        #              format(decoded.address, len(group.copies), st, dof, len(components)))
 
         # cluster timestamps into clusters that are probably copies of the
         # same transmission.
         clusters = []
         min_component_size = 4 - altitude_dof
         for component in components:
-            glogger.info("    componet len = {}".format(len(component)))
+            # glogger.info("    component len = {}, min_component_size = {}, message len = {}".format(len(component), min_component_size, len(group.message)))
             if len(component) >= min_component_size:  # don't bother with orphan components at all
-                clusters.extend(_cluster_timestamps(component, min_component_size))
+                clusters.extend(_cluster_timestamps(component, min_component_size, len(group.message)))
 
         if not clusters:
             return
 
-        glogger.info("... clusters len = {0}".format(len(clusters)))
+        # glogger.info("+++ clusters len = {0}".format(len(clusters)))
+        # glogger.info("   after clusters: addr = {:06x}, delay time = {:.06f}, copies len = {:04d}, dof = {}, clusters len = {:03d}, st = {}".
+        #              format(decoded.address, starttime-group.timestamp, len(group.copies), dof, len(clusters), st))
 
         # start from the most recent, largest, cluster
         result = None
-        clusters.sort(key=lambda x: (x[0], x[1]))
+        clusters.sort(key=lambda x: (x[0], x[1]))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
         while clusters and not result:
             distinct, cluster_utc, cluster = clusters.pop()
+
+            # for rec, timep, var in cluster:
+            #     glogger.info("--- cluster idx = {} user = {}, timestamp = {}, variance = {} ".format(len(clusters), rec.user, timep, var))
 
             # accept fewer receivers after 10s
             # accept the same number of receivers after MLAT_DELAY - 0.5s
@@ -250,7 +261,8 @@ class MlatTracker(object):
                     # this result is suspect
                     var_est = 100e6
 
-                # glogger.info("solve ecef = {0}, ecef_cov = {1}, var_est = {2:.2f}".format(ecef, ecef_cov, var_est))
+                # glogger.info("   #init  resolve: addr = {addr:06x}, delay time = {delaytime:.06f}, usedtime = {usedtime:.3f}, var_est = {var_est:.2f}, solved ecef = {ecef}".
+                #              format(addr=decoded.address, delaytime = time.time() - group.timestamp, usedtime=(time.time() - starttime), var_est=var_est, ecef=ecef))
 
                 if var_est > 100e6:
                     # more than 10km, too inaccurate
@@ -282,10 +294,8 @@ class MlatTracker(object):
 
         if altitude is None:
             _, _, solved_alt = geodesy.ecef2llh(ecef)
-            glogger.info("{addr:06x} solved altitude={solved_alt:.0f}ft with dof={dof}".format(
-                addr=decoded.address,
-                solved_alt=solved_alt*constants.MTOF,
-                dof=dof))
+            glogger.info(" {addr:06x} solved altitude={solved_alt:.0f}ft with dof={dof}".format(
+                addr=decoded.address, solved_alt=solved_alt*constants.MTOF, dof=dof))
 
         for handler in self.coordinator.output_handlers:
             handler(cluster_utc, decoded.address,
@@ -330,15 +340,19 @@ class MlatTracker(object):
             json.dump(state, self.pseudorange_file)
             self.pseudorange_file.write('\n')
 
+        glogger.info("   *final resolve: addr = {addr:06x}, delay time = {delaytime:.06f}, usedtime = {usedtime:.3f}, var_est = {var_est:.2f}, solved ecef = {ecef}".
+                 format(addr=decoded.address, delaytime = starttime - group.timestamp, usedtime=(time.time() - starttime), var_est=var_est, ecef=ecef))
+
 
 @profile.trackcpu
-def _cluster_timestamps(component, min_receivers):
+def _cluster_timestamps(component, min_receivers, msglen):
     """Given a component that has normalized timestamps:
 
       {
          receiver: (variance, [(timestamp, utc), ...]), ...
          receiver: (variance, [(timestamp, utc), ...]), ...
       }, ...
+      msglen:用来判断A模式或S模式
 
     return a list of clusters, where each cluster is a tuple:
 
@@ -365,7 +379,7 @@ def _cluster_timestamps(component, min_receivers):
     group = [flat_component[0]]
     groups = [group]
     for t in flat_component[1:]:
-        if (t[1] - group[-1][1]) > 2e-3: #S模式2ms， A模式呢？
+        if (t[1] - group[-1][1]) > (1e-4 if msglen == 2 else 2e-3): #S模式2ms， A模式0.1ms
             group = [t]
             groups.append(group)
         else:
@@ -397,7 +411,7 @@ def _cluster_timestamps(component, min_receivers):
             for i in range(len(group) - 1, -1, -1):
                 receiver, timestamp, variance, utc = group[i]
                 #glogger.info("  consider {i} = {r} {t:.1f}us".format(i=i, r=receiver.user, t=timestamp*1e6))
-                if (last_timestamp - timestamp) > 2e-3:
+                if (last_timestamp - timestamp) > (1e-4 if msglen == 2 else 2e-3): #S模式 2e-3秒(600公里), A模式1e-4秒(30公里)
                     # Can't possibly be part of the same cluster.
                     #
                     # Note that this is a different test to the rough grouping above:
