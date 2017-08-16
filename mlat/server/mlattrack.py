@@ -28,6 +28,7 @@ import logging
 import operator
 import numpy
 import time
+import math
 from contextlib import closing
 
 import modes.message
@@ -36,6 +37,8 @@ from mlat.server import clocknorm, solver, config
 
 glogger = logging.getLogger("mlattrack")
 
+def format_datetime_CST(timestamp):
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(timestamp+28800)) + ".{0:03.0f}".format(math.modf(timestamp)[0] * 1000)
 
 class MessageGroup:
     def __init__(self, message, first_seen, timestamp):
@@ -92,12 +95,17 @@ class MlatTracker(object):
         if not group:
             group = self.pending[message] = MessageGroup(message, utc, time.time())
             group.handle = asyncio.get_event_loop().call_later(
-                0.05 if msglen == 2 else config.MLAT_DELAY, #A模式延時0.2s, S模式延時2.5s
+                0.05 if msglen == 2 else config.MLAT_DELAY, #A模式延時0.05s, S模式延時2.5s
                 self._resolve,
                 group)
 
         group.copies.append((receiver, timestamp, utc))
         group.first_seen = min(group.first_seen, utc)
+
+        decoded = modes.message.decode(message)
+        if decoded.address in [0xff0446, 0xff0310, 0xff7321, 0xff0440, 0xff7332, 0xff7320, 0xff7333, 0xff7335]:
+            glogger.info("^^^ military addr = {:0X}, user = {}, timestamp = {}, utc = {}, group.message = {}".
+                         format(decoded.address, receiver.user, timestamp, format_datetime_CST(utc), group.message))
 
     @profile.trackcpu
     def _resolve(self, group):
@@ -107,9 +115,10 @@ class MlatTracker(object):
         # if len(group.message) <= 2: #过滤A模式报文
         #     return
 
-        # st = set() #distinct接收站集合
-        # for a in group.copies:
-        #     st.add(a[0].user)
+        st = set() #distinct接收站集合
+        for a in group.copies:
+            st.add(a[0].user)
+
         # glogger.info("delay time ={:.06f}, message len = {:02d}, copies len = {:04d}, st = {}, group.message = {}".
         #              format(starttime - group.timestamp, len(group.message), len(group.copies), st, group.message))
         # if len(st) >= 4: #A模式，接收站个数
@@ -120,6 +129,10 @@ class MlatTracker(object):
             return
 
         decoded = modes.message.decode(group.message)
+
+        if decoded.address in [0xff0446, 0xff0310, 0xff7321, 0xff0440, 0xff7332, 0xff7320, 0xff7333, 0xff7335]:
+            glogger.info("$$$ military addr = {:0X}, copies len = {:04d}, delay time = {:.06f}, st = {}, group.message = {}".
+                         format(decoded.address, len(group.copies), starttime - group.timestamp, st, group.message))
 
         ac = self.tracker.aircraft.get(decoded.address)
         if not ac:
@@ -188,16 +201,10 @@ class MlatTracker(object):
         # if elapsed < 2.0 and dof == last_result_dof:
         #     return
 
-        # glogger.info("group.message = {0}, copies len = {1}, st = {2}, dof = {3}".
-        #              format(group.message, len(group.copies), st, dof))
-
         # normalize timestamps. This returns a list of timestamp maps;
         # within each map, the timestamp values are comparable to each other.
         components = clocknorm.normalize(clocktracker=self.clock_tracker,
                                          timestamp_map=timestamp_map)
-
-        # glogger.info("addr = {:06x}, copies len = {:03d}, st = {}, dof = {}, components len = {}".
-        #              format(decoded.address, len(group.copies), st, dof, len(components)))
 
         # cluster timestamps into clusters that are probably copies of the
         # same transmission.
@@ -211,7 +218,6 @@ class MlatTracker(object):
         if not clusters:
             return
 
-        # glogger.info("+++ clusters len = {0}".format(len(clusters)))
         # glogger.info("   after clusters: addr = {:06x}, delay time = {:.06f}, copies len = {:04d}, dof = {}, clusters len = {:03d}, st = {}".
         #              format(decoded.address, starttime-group.timestamp, len(group.copies), dof, len(clusters), st))
 
@@ -340,8 +346,8 @@ class MlatTracker(object):
             json.dump(state, self.pseudorange_file)
             self.pseudorange_file.write('\n')
 
-        glogger.info("   *final resolve: addr = {addr:06x}, delay time = {delaytime:.06f}, usedtime = {usedtime:.3f}, var_est = {var_est:.2f}, solved ecef = {ecef}".
-                 format(addr=decoded.address, delaytime = starttime - group.timestamp, usedtime=(time.time() - starttime), var_est=var_est, ecef=ecef))
+        glogger.info("   *final resolve: addr = {addr:06x}, delay time = {delaytime:.06f}, usedtime = {usedtime:.3f}, var_est = {var_est:.2f}, st = {st}".
+                 format(addr=decoded.address, delaytime = starttime - group.timestamp, usedtime=(time.time() - starttime), var_est=var_est, st=st))
 
 
 @profile.trackcpu

@@ -43,7 +43,7 @@ MAX_INTERMESSAGE_RANGE = 10e3
 # absolute maximum altitude, metres
 MAX_ALT = 50000 * constants.FTOM
 
-# how long to wait to accumulate messages before doing multilateration, seconds
+# how long to wait to accumulate messages before doing multilateration, seconds（S模式）
 MLAT_DELAY = 2.5
 
 # maxfev (maximum function evaluations) for the solver
@@ -55,7 +55,7 @@ if 'AGPL_SERVER_CODE_URL' not in globals():
 # 0:最小二乘法
 # 1:伪逆法（接收站不分组）
 # 2:伪逆法（接收站分组 + 选取相关解 + 数据融合)；
-EQUATIONS_ALG = 2
+EQUATIONS_ALG = 0
 
 # 解模糊时，距离中心点在此半径范围内的点才保留，其他点认为是虚假定位点。单位：m
 MAX_RADIUS = 10e3

@@ -264,7 +264,7 @@ class JsonClient(connection.Connection):
         """A coroutine that handle reading from the client and processing messages.
 
         This does the initial handshake, then reads and processes messages
-        after the handshake iscomplete.
+        after the handshake is complete.
 
         It also does any client cleanup needed when the connection is closed.
 
@@ -415,7 +415,7 @@ class JsonClient(connection.Connection):
         self.logger.info("Handshake successful ({user} {conn_info})'".format(
             user=user,
             conn_info=conn_info))
-        self.logger = util.TaggingLogger(glogger, {'tag': '{user}'.format(user=user)})
+        self.logger = util.TaggingLogger(glogger, {'tag': '{host}:{port}-{user}'.format(user=user, host=self.host, port=self.port)})
         return True
 
     def write_raw(self, **kwargs):
@@ -524,7 +524,7 @@ class JsonClient(connection.Connection):
                 raise ValueError('Client sent a packet that was not newline terminated')
 
     def process_message(self, line):
-        #logging.info("%s >> %s", self.receiver.user, line)
+        # glogger.info("%s >> %s", self.receiver.user, line)
         msg = json.loads(line)
 
         if 'sync' in msg:

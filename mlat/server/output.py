@@ -36,7 +36,7 @@ def format_time(timestamp):
     return time.strftime("%H:%M:%S", time.gmtime(timestamp)) + ".{0:03.0f}".format(math.modf(timestamp)[0] * 1000)
 
 
-def format_date(timestamp): #转换成北京时间
+def format_date(timestamp):
     return time.strftime("%Y/%m/%d", time.gmtime(timestamp))
 
 
