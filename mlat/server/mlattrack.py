@@ -102,10 +102,10 @@ class MlatTracker(object):
         group.copies.append((receiver, timestamp, utc))
         group.first_seen = min(group.first_seen, utc)
 
-        decoded = modes.message.decode(message)
-        if decoded.address in [0xff0446, 0xff0310, 0xff7321, 0xff0440, 0xff7332, 0xff7320, 0xff7333, 0xff7335]:
-            glogger.info("^^^ military addr = {:0X}, user = {}, timestamp = {}, utc = {}, group.message = {}".
-                         format(decoded.address, receiver.user, timestamp, format_datetime_CST(utc), group.message))
+        # decoded = modes.message.decode(message)
+        # if decoded.address in [0xff0446, 0xff0310, 0xff7321, 0xff0440, 0xff7332, 0xff7320, 0xff7333, 0xff7335]:
+        #     glogger.info("^^^ military addr = {:0X}, user = {}, timestamp = {}, utc = {}, group.message = {}".
+        #                  format(decoded.address, receiver.user, timestamp, format_datetime_CST(utc), group.message))
 
     @profile.trackcpu
     def _resolve(self, group):
@@ -130,9 +130,9 @@ class MlatTracker(object):
 
         decoded = modes.message.decode(group.message)
 
-        if decoded.address in [0xff0446, 0xff0310, 0xff7321, 0xff0440, 0xff7332, 0xff7320, 0xff7333, 0xff7335]:
-            glogger.info("$$$ military addr = {:0X}, copies len = {:04d}, delay time = {:.06f}, st = {}, group.message = {}".
-                         format(decoded.address, len(group.copies), starttime - group.timestamp, st, group.message))
+        # if decoded.address in [0xff0446, 0xff0310, 0xff7321, 0xff0440, 0xff7332, 0xff7320, 0xff7333, 0xff7335]:
+        #     glogger.info("$$$ military addr = {:0X}, copies len = {:04d}, delay time = {:.06f}, st = {}, group.message = {}".
+        #                  format(decoded.address, len(group.copies), starttime - group.timestamp, st, group.message))
 
         ac = self.tracker.aircraft.get(decoded.address)
         if not ac:
