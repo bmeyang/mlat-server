@@ -31,7 +31,7 @@ if __name__ == '__main__':
 
     #################################################################################################
     #定义一个RotatingFileHandler，最多备份20个日志文件，每个日志文件最大20M
-    Rthandler = RotatingFileHandler('/home/yang/MLAT/mlat-server-master/log/mlat.log', 'a', maxBytes=20*1024*1024, backupCount=20)
+    Rthandler = RotatingFileHandler('./log/mlat.log', 'a', maxBytes=20*1024*1024, backupCount=20)
     Rthandler.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)-26s %(levelname)-8s %(name)-20s %(message)s')
     Rthandler.setFormatter(formatter)
