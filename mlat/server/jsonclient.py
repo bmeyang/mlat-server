@@ -525,7 +525,7 @@ class JsonClient(connection.Connection):
 
     def process_message(self, line):
         # glogger.info("%s >> %s", self.receiver.user, line)
-        msg = json.loads(line)
+        msg = json.loads(line) #str -> dict
 
         if 'sync' in msg:
             sync = msg['sync']
